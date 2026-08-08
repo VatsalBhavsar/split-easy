@@ -35,7 +35,9 @@ export async function signInWithGoogle(): Promise<void> {
       ? AuthSession.makeRedirectUri({ useProxy: true, projectNameForProxy: '@artinsubject/split-easy' } as any)
       : AuthSession.makeRedirectUri({ path: '--/auth/callback', preferLocalhost: true });
 
-    console.log('Google redirectUri:', redirectUri);
+    if (__DEV__) {
+      console.log('Google redirectUri:', redirectUri);
+    }
 
     const request = new AuthSession.AuthRequest({
       clientId,
