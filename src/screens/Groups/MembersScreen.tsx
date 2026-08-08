@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
   guestText: { fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 0.4 },
   guestNote: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    borderRadius: 10, padding: 10, marginTop: 4,
+    borderRadius: 10, padding: 10, marginTop: 4, marginBottom: 4,
   },
   guestNoteText: { flex: 1, fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 17 },
 });
