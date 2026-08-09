@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { User } from 'firebase/auth';
@@ -8,6 +8,9 @@ import SettingsScreen from '../Settings/SettingsScreen';
 import SecondaryButton from '../../ui/SecondaryButton';
 import { Avatar } from '../../ui/Avatar';
 import { useAppTheme } from '../../theme';
+import { Group } from '../../types/group';
+import { subscribeToUserGroups } from '../../services/groupService';
+import { listenUserBalance } from '../../services/balanceService';
 
 type Props = {
   user: User;
@@ -16,6 +19,34 @@ type Props = {
 export default function ProfileScreen({ user }: Props) {
   const theme = useAppTheme();
   const [showSettings, setShowSettings] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [balanceMap, setBalanceMap] = useState<Record<string, number>>({});
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribeToUserGroups(user.uid, (items) => setGroups(items));
+    return unsub;
+  }, [user.uid]);
+
+  useEffect(() => {
+    if (groups.length === 0) { setBalanceMap({}); return; }
+    const unsubs = groups.map((g) =>
+      listenUserBalance(g.id, user.uid, (balance) =>
+        setBalanceMap((prev) => ({ ...prev, [g.id]: balance })),
+      ),
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [groups, user.uid]);
+
+  const settledCount = groups.filter((g) => Math.abs(balanceMap[g.id] ?? 0) <= 0.001).length;
+  const openCount = groups.length - settledCount;
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    // groups/balances are realtime; this is a brief affordance while listeners re-settle
+    await new Promise((r) => setTimeout(r, 400));
+    setRefreshing(false);
+  };
 
   if (showSettings) {
     return <SettingsScreen onClose={() => setShowSettings(false)} />;
@@ -31,7 +62,13 @@ export default function ProfileScreen({ user }: Props) {
         </View>
       </SafeAreaView>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} colors={[theme.primary]} />
+        }
+      >
         {/* Profile card */}
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={styles.profileRow}>
@@ -53,10 +90,10 @@ export default function ProfileScreen({ user }: Props) {
             </View>
           </View>
           <View style={styles.profileActions}>
-            <SecondaryButton variant="outlined" size="sm" style={styles.flex1}>
+            <SecondaryButton variant="outlined" size="sm" style={styles.flex1} disabled>
               Edit profile
             </SecondaryButton>
-            <SecondaryButton variant="outlined" size="sm" style={styles.flex1}>
+            <SecondaryButton variant="outlined" size="sm" style={styles.flex1} disabled>
               Share invite
             </SecondaryButton>
           </View>
@@ -66,15 +103,15 @@ export default function ProfileScreen({ user }: Props) {
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text style={[styles.statLabel, { color: theme.textSec }]}>Groups</Text>
-            <Text style={[styles.statValue, { color: theme.text }]}>—</Text>
+            <Text style={[styles.statValue, { color: theme.text }]}>{groups.length}</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text style={[styles.statLabel, { color: theme.textSec }]}>Settled</Text>
-            <Text style={[styles.statValue, { color: theme.successText }]}>—</Text>
+            <Text style={[styles.statValue, { color: theme.successText }]}>{settledCount}</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text style={[styles.statLabel, { color: theme.textSec }]}>Open</Text>
-            <Text style={[styles.statValue, { color: theme.primary }]}>—</Text>
+            <Text style={[styles.statValue, { color: theme.primary }]}>{openCount}</Text>
           </View>
         </View>
 
@@ -93,6 +130,7 @@ export default function ProfileScreen({ user }: Props) {
             title="Currency preferences"
             subtitle="Default INR · Live ECB rates"
             theme={theme}
+            comingSoon
           />
           <View style={[styles.divider, { backgroundColor: theme.divider, marginLeft: 62 }]} />
           <MenuRow
@@ -100,12 +138,14 @@ export default function ProfileScreen({ user }: Props) {
             title="Security"
             subtitle="Password · Two-factor"
             theme={theme}
+            comingSoon
           />
           <View style={[styles.divider, { backgroundColor: theme.divider, marginLeft: 62 }]} />
           <MenuRow
             icon="❔"
             title="Help & feedback"
             theme={theme}
+            comingSoon
           />
         </View>
 
@@ -125,26 +165,36 @@ export default function ProfileScreen({ user }: Props) {
 }
 
 function MenuRow({
-  icon, title, subtitle, theme, onPress,
-}: { icon: string; title: string; subtitle?: string; theme: any; onPress?: () => void }) {
+  icon, title, subtitle, theme, onPress, comingSoon,
+}: { icon: string; title: string; subtitle?: string; theme: any; onPress?: () => void; comingSoon?: boolean }) {
   return (
     <Pressable
-      onPress={onPress}
+      onPress={comingSoon ? undefined : onPress}
       style={({ pressed }) => [
         styles.menuRow,
-        pressed && { opacity: 0.75 },
+        comingSoon && { opacity: 0.5 },
+        pressed && !comingSoon && { opacity: 0.75 },
       ]}
     >
       <View style={[styles.menuIcon, { backgroundColor: theme.cardAlt }]}>
         <Text style={styles.menuIconText}>{icon}</Text>
       </View>
       <View style={styles.menuInfo}>
-        <Text style={[styles.menuTitle, { color: theme.text }]}>{title}</Text>
+        <View style={styles.menuTitleRow}>
+          <Text style={[styles.menuTitle, { color: theme.text }]}>{title}</Text>
+          {comingSoon && (
+            <View style={[styles.comingSoonBadge, { backgroundColor: theme.cardAlt }]}>
+              <Text style={[styles.comingSoonText, { color: theme.textMuted }]}>COMING SOON</Text>
+            </View>
+          )}
+        </View>
         {subtitle ? (
           <Text style={[styles.menuSub, { color: theme.textSec }]}>{subtitle}</Text>
         ) : null}
       </View>
-      <MaterialCommunityIcons name="chevron-right" size={18} color={theme.textMuted} />
+      {!comingSoon && (
+        <MaterialCommunityIcons name="chevron-right" size={18} color={theme.textMuted} />
+      )}
     </Pressable>
   );
 }
@@ -186,7 +236,10 @@ const styles = StyleSheet.create({
   },
   menuIconText: { fontSize: 16 },
   menuInfo: { flex: 1, minWidth: 0 },
+  menuTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   menuTitle: { fontSize: 15, fontFamily: 'Inter_500Medium' },
+  comingSoonBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999 },
+  comingSoonText: { fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.4 },
   menuSub: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 2 },
   version: {
     textAlign: 'center', fontSize: 11, fontFamily: 'Inter_400Regular',

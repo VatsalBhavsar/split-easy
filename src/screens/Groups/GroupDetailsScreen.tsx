@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Switch, Modal, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Switch, Modal, Pressable, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -88,6 +88,7 @@ export default function GroupDetailsScreen({
   const [expensesError, setExpensesError] = useState('');
   const [filter, setFilter] = useState<'all' | 'lent' | 'borrowed'>('all');
   const [myBalance, setMyBalance] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const adminUser = group ? isAdmin(group, userId) : false;
   const hasEnoughMembers = (group?.members?.length || 0) >= 2;
   const baseCurrency = group?.baseCurrency || group?.currency || 'USD';
@@ -142,7 +143,7 @@ export default function GroupDetailsScreen({
       (err) => { setExpensesError(err?.message || 'Could not load expenses'); setExpensesLoading(false); },
     );
     return unsub;
-  }, [group]);
+  }, [group?.id]);
 
   useEffect(() => {
     if (!group) return;
@@ -151,7 +152,19 @@ export default function GroupDetailsScreen({
       if (mine) setMyBalance(mine.netBalance);
     });
     return unsub;
-  }, [group, userId]);
+  }, [group?.id, userId]);
+
+  const handleRefresh = async () => {
+    if (!group?.members?.length) return;
+    setRefreshing(true);
+    try {
+      const users = await getUsersByIds(group.members);
+      const map: Record<string, UserProfile> = {};
+      users.forEach((u) => { map[u.id] = u; });
+      setProfiles(map);
+    } catch { /* ignore */ }
+    setRefreshing(false);
+  };
 
   const handleSaveDetails = async () => {
     if (!group) return;
@@ -269,7 +282,13 @@ export default function GroupDetailsScreen({
       {loading || !group ? (
         <LoadingState text="Loading group..." />
       ) : (
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} colors={[theme.primary]} />
+          }
+        >
           {/* Balance card */}
           <View style={styles.cardWrap}>
             <LinearGradient

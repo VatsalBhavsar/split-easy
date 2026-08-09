@@ -179,7 +179,7 @@ export default function CreateSettlementScreen({
             keyboardType="numeric"
             value={amount}
             onChangeText={setAmount}
-            style={[styles.amountInput, { color: theme.text, borderColor: theme.border }]}
+            style={[styles.amountInput, { color: theme.text, borderColor: theme.border }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
             placeholderTextColor={theme.placeholder}
             placeholder="0.00"
           />
@@ -205,7 +205,7 @@ export default function CreateSettlementScreen({
           <TextInput
             value={note}
             onChangeText={setNote}
-            style={[styles.noteInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
+            style={[styles.noteInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
             placeholderTextColor={theme.placeholder}
             placeholder="e.g. Dinner settlement"
           />
@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
   amountError: { fontSize: 12, fontFamily: 'Inter_400Regular', textAlign: 'center', marginBottom: 4 },
   noteInput: {
     height: 44, borderWidth: 1, borderRadius: 10,
-    paddingHorizontal: 12, fontSize: 15, fontFamily: 'Inter_400Regular', marginTop: 4,
+    paddingHorizontal: 12, fontSize: 16, fontFamily: 'Inter_400Regular', marginTop: 4,
   },
   dateBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10,

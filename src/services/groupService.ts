@@ -5,18 +5,22 @@ import {
   collection,
   doc,
   deleteDoc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Group } from '../types/group';
+import { generateInviteCode } from '../utils/inviteLink';
 
 const groupsCol = collection(db, 'groups');
 const usersCol = collection(db, 'users');
+const inviteCodesCol = collection(db, 'inviteCodes');
 
 type CreateGroupInput = {
   name: string;
@@ -60,6 +64,7 @@ export function subscribeToGroup(groupId: string, cb: (group: Group | null) => v
 export async function createGroup(input: CreateGroupInput) {
   const now = serverTimestamp();
   const baseCurrency = input.baseCurrency;
+  const inviteCode = generateInviteCode();
   const payload = {
     name: input.name.trim(),
     description: input.description?.trim() || '',
@@ -70,11 +75,42 @@ export async function createGroup(input: CreateGroupInput) {
     createdBy: input.createdBy,
     members: [input.createdBy],
     admins: [input.createdBy],
+    inviteCode,
     createdAt: now,
     updatedAt: now,
   };
   const docRef = await addDoc(groupsCol, payload);
+  await setDoc(doc(inviteCodesCol, inviteCode), { groupId: docRef.id });
   return docRef.id;
+}
+
+export async function ensureInviteCode(groupId: string): Promise<string> {
+  const ref = doc(db, 'groups', groupId);
+  const snap = await getDoc(ref);
+  const existing = snap.exists() ? (snap.data() as any).inviteCode : undefined;
+  if (existing) return existing;
+  const inviteCode = generateInviteCode();
+  await updateDoc(ref, { inviteCode, updatedAt: serverTimestamp() });
+  await setDoc(doc(inviteCodesCol, inviteCode), { groupId });
+  return inviteCode;
+}
+
+export async function getGroupByInviteCode(inviteCode: string): Promise<Group | null> {
+  const codeSnap = await getDoc(doc(inviteCodesCol, inviteCode));
+  if (!codeSnap.exists()) return null;
+  const { groupId } = codeSnap.data() as { groupId: string };
+  const groupSnap = await getDoc(doc(db, 'groups', groupId));
+  if (!groupSnap.exists()) return null;
+  return { id: groupSnap.id, ...(groupSnap.data() as any) };
+}
+
+export async function joinGroupByInviteCode(inviteCode: string, userId: string): Promise<Group> {
+  const group = await getGroupByInviteCode(inviteCode);
+  if (!group) throw new Error('This invite link is invalid or has expired');
+  if (group.members.includes(userId)) return group;
+  const ref = doc(db, 'groups', group.id);
+  await updateDoc(ref, { members: arrayUnion(userId), updatedAt: serverTimestamp() });
+  return { ...group, members: [...group.members, userId] };
 }
 
 export async function addMemberByEmail(groupId: string, email: string) {
@@ -89,6 +125,11 @@ export async function addMemberByEmail(groupId: string, email: string) {
   }
   const targetId = userSnap.docs[0].id;
   const ref = doc(db, 'groups', groupId);
+  const groupSnap = await getDoc(ref);
+  const currentMembers: string[] = groupSnap.exists() ? (groupSnap.data() as any).members || [] : [];
+  if (currentMembers.includes(targetId)) {
+    throw new Error('This person is already a member of this group');
+  }
   await updateDoc(ref, {
     members: arrayUnion(targetId),
     updatedAt: serverTimestamp(),

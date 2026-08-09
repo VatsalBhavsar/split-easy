@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, RefreshControl, ActivityIndicator } from 'react-native';
 import { User } from 'firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -58,6 +58,8 @@ export default function HomeScreen({ user, onNewGroup, onOpenGroup, onAddExpense
   const [currentUser, setCurrentUser] = useState(user);
   const [groupPicker, setGroupPicker] = useState<'addExpense' | 'settle' | null>(null);
   const [profilesMap, setProfilesMap] = useState<Record<string, string>>({});
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const [statsRefreshing, setStatsRefreshing] = useState(false);
 
   useEffect(() => { setCurrentUser(user); }, [user]);
 
@@ -93,6 +95,31 @@ export default function HomeScreen({ user, onNewGroup, onOpenGroup, onAddExpense
     setRefreshing(false);
   };
 
+  const refreshProfiles = async () => {
+    if (groups.length === 0) return;
+    try {
+      const ids = new Set<string>();
+      groups.forEach(g => g.members.forEach(id => ids.add(id)));
+      const users = await getUsersByIds(Array.from(ids));
+      const map: Record<string, string> = {};
+      users.forEach(u => { map[u.id] = u.displayName || u.email || ''; });
+      setProfilesMap(map);
+    } catch { /* ignore */ }
+  };
+
+  const handlePullRefresh = async () => {
+    setPullRefreshing(true);
+    await refreshProfiles();
+    setPullRefreshing(false);
+  };
+
+  const handleStatsRefresh = async () => {
+    if (statsRefreshing) return;
+    setStatsRefreshing(true);
+    await refreshProfiles();
+    setStatsRefreshing(false);
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: theme.bg }}>
@@ -113,7 +140,13 @@ export default function HomeScreen({ user, onNewGroup, onOpenGroup, onAddExpense
         </View>
       </SafeAreaView>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={pullRefreshing} onRefresh={handlePullRefresh} tintColor={theme.primary} colors={[theme.primary]} />
+        }
+      >
         {/* Greeting */}
         <View style={styles.greetingBlock}>
           <Text style={[styles.greetingSub, { color: theme.textSec }]}>
@@ -135,6 +168,19 @@ export default function HomeScreen({ user, onNewGroup, onOpenGroup, onAddExpense
             {/* Decorative circles */}
             <View style={styles.heroDeco1} />
             <View style={styles.heroDeco2} />
+
+            <Pressable
+              onPress={handleStatsRefresh}
+              disabled={statsRefreshing}
+              hitSlop={8}
+              style={styles.heroRefreshBtn}
+            >
+              {statsRefreshing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <MaterialCommunityIcons name="refresh" size={18} color="#fff" />
+              )}
+            </Pressable>
 
             <Text style={styles.heroLabel}>Total balance</Text>
             <Text style={styles.heroAmount}>
@@ -340,6 +386,12 @@ const styles = StyleSheet.create({
   heroDeco2: {
     position: 'absolute', bottom: -50, right: 30, width: 110, height: 110,
     borderRadius: 55, backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  heroRefreshBtn: {
+    position: 'absolute', top: 16, right: 16, zIndex: 1,
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
   heroLabel: {
     fontSize: 12, fontFamily: 'Inter_500Medium', color: 'rgba(255,255,255,0.8)',

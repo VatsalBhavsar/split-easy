@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import EmptyState from '../../ui/EmptyState';
@@ -44,6 +44,7 @@ export default function GroupBalancesScreen({
   const [profiles, setProfiles] = useState<Record<string, UserProfile>>({});
   const [loadingBalances, setLoadingBalances] = useState(true);
   const [loadingDebts, setLoadingDebts] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const unsubBalances = listenGroupBalances(groupId, (items) => {
@@ -81,6 +82,22 @@ export default function GroupBalancesScreen({
 
   const debtItems = useMemo(() => debts.filter((d) => d.amount > 0.009), [debts]);
 
+  const handleRefresh = async () => {
+    const ids = new Set<string>();
+    balances.forEach((b) => ids.add(b.userId));
+    debts.forEach((d) => { ids.add(d.fromUserId); ids.add(d.toUserId); });
+    settlements.forEach((s) => { ids.add(s.paidBy); ids.add(s.paidTo); });
+    if (ids.size === 0) return;
+    setRefreshing(true);
+    try {
+      const users = await getUsersByIds(Array.from(ids));
+      const map: Record<string, UserProfile> = {};
+      users.forEach((u) => (map[u.id] = u));
+      setProfiles(map);
+    } catch { /* ignore */ }
+    setRefreshing(false);
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]} {...swipeBack}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: theme.bg }}>
@@ -93,7 +110,13 @@ export default function GroupBalancesScreen({
         </View>
       </SafeAreaView>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} colors={[theme.primary]} />
+        }
+      >
         {/* Summary card */}
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, View, Text, StyleSheet } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 
@@ -6,17 +6,25 @@ SplashScreen.preventAutoHideAsync();
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from './src/firebase';
 import AuthScreen from './src/screens/Auth/AuthScreen';
 import HomeScreen from './src/screens/Home/HomeScreen';
 import GroupsStack from './src/screens/Groups/GroupsStack';
+import JoinGroupScreen from './src/screens/Groups/JoinGroupScreen';
 import Screen from './src/ui/Screen';
 import { ThemeProvider, useAppTheme } from './src/theme';
 import { globalStyles } from './src/styles/globalStyles';
 import { ensureUserProfile } from './src/services/userService';
+import { joinGroupByInviteCode } from './src/services/groupService';
+import { parseInviteCode } from './src/utils/inviteLink';
 import ProfileScreen from './src/screens/Profile/ProfileScreen';
 import NotificationsScreen from './src/screens/Notifications/NotificationsScreen';
 import { Group } from './src/types/group';
+
+const PENDING_INVITE_KEY = 'pendingInviteCode';
+const PENDING_INVITE_AUTOJOIN_KEY = 'pendingInviteAutoJoin';
 
 type RouteKey = 'home' | 'groups' | 'profile';
 
@@ -89,6 +97,8 @@ function AppInner() {
   const [index, setIndex] = useState(0);
   const [pendingGroupAction, setPendingGroupAction] = useState<{ type: 'create' | 'details' | 'addExpense' | 'settle'; group?: Group } | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(null);
+  const [autoJoinPending, setAutoJoinPending] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -102,6 +112,64 @@ function AppInner() {
   useEffect(() => {
     if (!user) setIndex(0);
   }, [user]);
+
+  const handledInviteCodesRef = useRef<Set<string>>(new Set());
+
+  const clearPendingInvite = () => {
+    if (pendingInviteCode) handledInviteCodesRef.current.add(pendingInviteCode);
+    setPendingInviteCode(null);
+    setAutoJoinPending(false);
+    AsyncStorage.removeItem(PENDING_INVITE_KEY).catch(() => {});
+    AsyncStorage.removeItem(PENDING_INVITE_AUTOJOIN_KEY).catch(() => {});
+  };
+
+  const handleInviteJoined = (group: Group) => {
+    clearPendingInvite();
+    setPendingGroupAction({ type: 'details', group });
+    setIndex(1);
+  };
+
+  useEffect(() => {
+    const captureInvite = (url: string | null) => {
+      if (!url) return;
+      const code = parseInviteCode(url);
+      if (!code) return;
+      // On web, expo-linking's 'url' event actually fires on any window
+      // `message` event (Firebase auth/Firestore internals send these
+      // routinely), re-reading window.location.href each time. Scrub the
+      // invite path from the visible URL immediately so those stray events
+      // can't keep re-parsing the same already-handled invite link.
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        window.history.replaceState(null, '', '/');
+      }
+      if (handledInviteCodesRef.current.has(code)) return;
+      setPendingInviteCode(code);
+      AsyncStorage.setItem(PENDING_INVITE_KEY, code).catch(() => {});
+      if (!auth.currentUser) {
+        setAutoJoinPending(true);
+        AsyncStorage.setItem(PENDING_INVITE_AUTOJOIN_KEY, '1').catch(() => {});
+      }
+    };
+    Linking.getInitialURL().then(captureInvite);
+    const sub = Linking.addEventListener('url', ({ url }) => captureInvite(url));
+    AsyncStorage.getItem(PENDING_INVITE_KEY).then(async (stored) => {
+      if (!stored || handledInviteCodesRef.current.has(stored)) return;
+      setPendingInviteCode((prev) => prev ?? stored);
+      const autoJoin = await AsyncStorage.getItem(PENDING_INVITE_AUTOJOIN_KEY);
+      if (autoJoin === '1') setAutoJoinPending(true);
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!user || !pendingInviteCode || !autoJoinPending) return;
+    let cancelled = false;
+    joinGroupByInviteCode(pendingInviteCode, user.uid)
+      .then((group) => { if (!cancelled) handleInviteJoined(group); })
+      .catch(() => { if (!cancelled) clearPendingInvite(); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, pendingInviteCode, autoJoinPending]);
 
   const renderScene = (key: RouteKey) => {
     switch (key) {
@@ -159,6 +227,14 @@ function AppInner() {
         {renderScene(activeKey)}
         {showNotifications && (
           <NotificationsScreen onBack={() => setShowNotifications(false)} />
+        )}
+        {pendingInviteCode && !autoJoinPending && (
+          <JoinGroupScreen
+            inviteCode={pendingInviteCode}
+            user={user}
+            onJoined={handleInviteJoined}
+            onDismiss={clearPendingInvite}
+          />
         )}
       </View>
       <BottomTabBar index={index} onPress={setIndex} />

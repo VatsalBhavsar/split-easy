@@ -2,17 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import TextField from '../../ui/TextField';
 import ConfirmDialog from '../../ui/ConfirmDialog';
 import LoadingState from '../../ui/LoadingState';
 import PrimaryButton from '../../ui/PrimaryButton';
 import SecondaryButton from '../../ui/SecondaryButton';
 import { Avatar } from '../../ui/Avatar';
-import { subscribeToGroup, addMemberByEmail, addMemberById, removeMember } from '../../services/groupService';
+import { subscribeToGroup, addMemberByEmail, addMemberById, removeMember, ensureInviteCode } from '../../services/groupService';
 import { Group } from '../../types/group';
 import { UserProfile } from '../../types/user';
 import { getUsersByIds, createGuestUser } from '../../services/userService';
 import { isAdmin, canRemoveAdmin } from '../../utils/permissions';
+import { buildInviteUrl } from '../../utils/inviteLink';
 import { useAppTheme } from '../../theme';
 import { useSwipeBack } from '../../hooks/useSwipeBack';
 
@@ -36,6 +38,7 @@ export default function MembersScreen({ groupId, userId, onBack }: Props) {
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeToGroup(
@@ -45,6 +48,12 @@ export default function MembersScreen({ groupId, userId, onBack }: Props) {
     );
     return unsub;
   }, [groupId]);
+
+  useEffect(() => {
+    if (group && !group.inviteCode) {
+      ensureInviteCode(group.id).catch(() => {});
+    }
+  }, [group]);
 
   useEffect(() => {
     const loadProfiles = async () => {
@@ -78,10 +87,19 @@ export default function MembersScreen({ groupId, userId, onBack }: Props) {
   };
 
   const handleAddGuest = async () => {
-    if (!guestName.trim()) return;
+    const trimmedName = guestName.trim();
+    if (!trimmedName) return;
+    const normalized = trimmedName.toLowerCase();
+    const nameExists = Object.values(profiles).some(
+      (p) => (p.displayName || '').trim().toLowerCase() === normalized,
+    );
+    if (nameExists) {
+      setError('A member with this name already exists in this group');
+      return;
+    }
     setGuestBusy(true); setError('');
     try {
-      const guest = await createGuestUser(guestName.trim());
+      const guest = await createGuestUser(trimmedName);
       await addMemberById(groupId, guest.id);
       setGuestName('');
     } catch (e: any) {
@@ -231,10 +249,22 @@ export default function MembersScreen({ groupId, userId, onBack }: Props) {
               <View style={styles.inviteInfo}>
                 <Text style={[styles.inviteTitle, { color: theme.text }]}>Invite link</Text>
                 <Text style={[styles.inviteLink, { color: theme.textSec }]} numberOfLines={1}>
-                  spliteasy.app/invite/{groupId.slice(0, 8)}
+                  {group?.inviteCode ? buildInviteUrl(group.inviteCode) : 'Generating link…'}
                 </Text>
               </View>
-              <SecondaryButton variant="soft" size="sm">Copy</SecondaryButton>
+              <SecondaryButton
+                variant="soft"
+                size="sm"
+                disabled={!group?.inviteCode}
+                onPress={async () => {
+                  if (!group?.inviteCode) return;
+                  await Clipboard.setStringAsync(buildInviteUrl(group.inviteCode));
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </SecondaryButton>
             </View>
           </View>
         )}

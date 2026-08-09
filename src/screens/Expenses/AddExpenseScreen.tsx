@@ -239,7 +239,7 @@ export default function AddExpenseScreen({
               keyboardType="numeric"
               value={amount}
               onChangeText={setAmount}
-              style={[styles.amountInput, { color: theme.text }]}
+              style={[styles.amountInput, { color: theme.text }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
               placeholderTextColor={theme.placeholder}
               placeholder="0.00"
             />
@@ -250,7 +250,7 @@ export default function AddExpenseScreen({
               <TextInput
                 value={description}
                 onChangeText={setDescription}
-                style={[styles.descInput, { color: theme.text, borderColor: theme.border }]}
+                style={[styles.descInput, { color: theme.text, borderColor: theme.border }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
                 placeholderTextColor={theme.placeholder}
                 placeholder="What was it for?"
               />
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
   amountMeta: { gap: 12, marginBottom: 12 },
   fieldLabel: { fontSize: 12, fontFamily: 'Inter_500Medium', marginBottom: 4 },
   descInput: {
-    fontSize: 15, fontFamily: 'Inter_400Regular',
+    fontSize: 16, fontFamily: 'Inter_400Regular',
     borderWidth: 1, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 10, minHeight: 44,
   },

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TextInputProps, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TextInputProps, StyleSheet, Platform } from 'react-native';
 import { useAppTheme } from '../theme';
 import { RADIUS } from '../theme/tokens';
 
@@ -42,6 +42,7 @@ export default function TextField({ label, error, prefix, right, suffix, style, 
             styles.input,
             { color: theme.text },
             multiline && styles.multiline,
+            Platform.OS === 'web' && ({ outlineStyle: 'none' } as any),
           ]}
         />
         {(right || suffix) ? <View style={styles.suffix}>{right ?? suffix}</View> : null}
@@ -72,7 +73,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'Inter_400Regular',
     paddingVertical: 10,
     letterSpacing: -0.15,

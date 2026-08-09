@@ -11,6 +11,7 @@ export type Group = {
   baseCurrency?: string;
   supportedCurrencies?: string[];
   multiCurrencyEnabled?: boolean;
+  inviteCode?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 };

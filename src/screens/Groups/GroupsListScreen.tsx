@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView, TextInput } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ScrollView, TextInput, Platform, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -34,6 +34,7 @@ export default function GroupsListScreen({ userId, onCreate, onSelect, onBack }:
   const [activeFilter, setActiveFilter] = useState('All');
   const [balanceMap, setBalanceMap] = useState<Record<string, number>>({});
   const [profilesMap, setProfilesMap] = useState<Record<string, string>>({});
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeToUserGroups(
@@ -82,6 +83,21 @@ export default function GroupsListScreen({ userId, onCreate, onSelect, onBack }:
     ? `${groups.length} group${groups.length !== 1 ? 's' : ''}`
     : `${filtered.length} of ${groups.length}`;
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const ids = new Set<string>();
+      groups.forEach(g => g.members.forEach(id => ids.add(id)));
+      if (ids.size) {
+        const users = await getUsersByIds(Array.from(ids));
+        const map: Record<string, string> = {};
+        users.forEach(u => { map[u.id] = u.displayName || u.email || ''; });
+        setProfilesMap(map);
+      }
+    } catch { /* ignore */ }
+    setRefreshing(false);
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: theme.bg }}>
@@ -105,7 +121,7 @@ export default function GroupsListScreen({ userId, onCreate, onSelect, onBack }:
           onChangeText={setSearch}
           placeholder="Search groups…"
           placeholderTextColor={theme.placeholder}
-          style={[styles.searchInput, { color: theme.text }]}
+          style={[styles.searchInput, { color: theme.text }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
         />
       </View>
 
@@ -131,7 +147,13 @@ export default function GroupsListScreen({ userId, onCreate, onSelect, onBack }:
           action={groups.length === 0 ? { label: 'Create group', onPress: onCreate } : undefined}
         />
       ) : (
-        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} colors={[theme.primary]} />
+          }
+        >
           {filtered.map(g => (
             <GroupCard
               key={g.id}
@@ -202,7 +224,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 10,
     borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, height: 44, gap: 8,
   },
-  searchInput: { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular', paddingVertical: 10 },
+  searchInput: { flex: 1, fontSize: 16, fontFamily: 'Inter_400Regular', paddingVertical: 10 },
   filtersRow: { paddingBottom: 8 },
   filtersContent: { paddingHorizontal: 16, gap: 8 },
   listContent: { paddingHorizontal: 16, gap: 10, paddingTop: 6 },

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, View, Text, TextInput, Pressable } from 'react-native';
+import { StyleSheet, View, Text, TextInput, Pressable, Platform } from 'react-native';
 import { SplitType } from '../types/expense';
 import { UserProfile } from '../types/user';
 import { calculateSplits } from '../utils/splitCalculator';
@@ -52,6 +52,7 @@ export default function SplitEditor({
       backgroundColor: theme.surface,
       color: theme.text,
     },
+    Platform.OS === 'web' && ({ outlineStyle: 'none' } as any),
   ];
 
   const renderRow = (id: string) => {
@@ -79,7 +80,7 @@ export default function SplitEditor({
                 keyboardType="numeric"
                 value={String(values[id] ?? '')}
                 onChangeText={(t) => handleValueChange(id, t)}
-                style={[styles.inputInner, { color: theme.text }]}
+                style={[styles.inputInner, { color: theme.text }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
                 placeholderTextColor={theme.placeholder}
                 placeholder="0"
               />
@@ -202,7 +203,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 10,
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: 'Inter_400Regular',
     minWidth: 80,
     textAlign: 'right',
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
   },
   inputInner: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: 'Inter_400Regular',
     textAlign: 'right',
   },
